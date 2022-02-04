@@ -5,6 +5,8 @@ import datetime
 from urllib import parse
 
 TIMETOSCORE_URL = 'https://stats.sharksice.timetoscore.com/'
+TEAM_URL = 'https://stats.sharksice.timetoscore.com/display-schedule?team={team_id}'
+GAME_URL = 'https://stats.sharksice.timetoscore.com/oss-scoresheet?game_id={game_id}'
 MAIN_STATS_URL = TIMETOSCORE_URL + 'display-stats.php'
 
 LIVEBARN_RINKS = {
@@ -42,6 +44,8 @@ def dedupe(headers):
 
 def load_table(header_row):
   table = []
+  if not header_row:
+    return table
   columns = [t.text.strip() for t in header_row.find_all('th')]
   columns = dedupe(columns)
   row = header_row.next_sibling
@@ -54,6 +58,21 @@ def load_table(header_row):
   return table
 
 
+def _estimate_time(start_time, period, seconds_remaining):
+  estimate = start_time
+  estimate += datetime.timedelta(minutes=5)  # warmups
+  period_minutes = datetime.timedelta(minutes=22)  # estimate periods at 22m
+  estimate += period_minutes * (period - 1)
+  estimate += (period_minutes - seconds_remaining)  # Time is time remaining in period
+  return estimate
+
+
+def get_team_id_from_link(url):
+  query = parse.urlsplit(url).query
+  query_map = dict(parse.parse_qsl(query))
+  return query_map.get('team')
+
+# JSON helpers for REST API
 def load_divisions():
   soup = get_html(MAIN_STATS_URL, params={'league': '1'})
   divisions = {}
@@ -67,41 +86,39 @@ def load_divisions():
         for team_row in load_table(row):
           name = team_row['Team'].text.strip()
           link = TIMETOSCORE_URL + team_row['Team'].a['href']
-          divisions[division][name] = Team(name, division, link)
+          team_id = get_team_id_from_link(link)
+          divisions[division][name] = {'name': name, 'team_id': team_id}
   return divisions
 
+def parse_date_time(date_str, time_str):
+  year = str(datetime.datetime.now().year)
+  return datetime.datetime.strptime(year + ' ' + date_str + ' ' + time_str, '%Y %a %b %d %I:%M %p')
 
-class Team(object):
-  def __init__(self, name, division, link):
-    self.name = name
-    self.division = division
-    self.link = link
-    self.games = []
+def load_team(team_id: int):
+  games = {}
+  soup = get_html(TEAM_URL.format(team_id=team_id))
+  if not soup.table:
+    return {}
+  header = soup.table.tr
+  while header.next_sibling and header.next_sibling.th:
+    header = header.next_sibling
+  for game in load_table(header):
+    game_id = game['Game'].text.strip().replace('*', '')
+    start_time = parse_date_time(game['Date'].text.strip(), game['Time'].text.strip())
+    rink = game['Rink'].text.strip()
+    home = game['Home'].text.strip()
+    away = game['Away'].text.strip()
+    games[game_id] = {
+        'start_time': start_time,
+        'rink': rink,
+        'home': home,
+        'away': away}
+    if game['Goals'].text.strip():
+      games[game_id]['away_goals'] = game['Goals'].text.strip()
+    if game['Goals2'].text.strip():
+      games[game_id]['home_goals'] = game['Goals2'].text.strip()
+  return games
 
-  def load_games(self):
-    print('Loading games for %s' % self)
-    games = []
-    soup = get_html(self.link)
-    header = soup.table.tr
-    while header.next_sibling.th:
-      header = header.next_sibling
-    for game in load_table(header):
-      start_time = game['Date'].text.strip() + ' ' + game['Time'].text.strip()
-      year = str(datetime.datetime.now().year)
-      start_time = datetime.datetime.strptime(year + ' ' + start_time, '%Y %a %b %d %I:%M %p')
-      rink = game['Rink'].text.strip()
-      home = game['Home'].text.strip()
-      away = game['Away'].text.strip()
-      link = None
-      if game['Game'].a:
-        link = TIMETOSCORE_URL + game['Game'].a['href']
-      g = Game(start_time, rink, home, away, link)
-      games.append(g)
-    self.games = games
-    return games
-
-  def __str__(self):
-    return '%s in %s' % (self.name, self.division)
 
 def _load_players(header):
   players = {}
@@ -115,170 +132,77 @@ def _load_players(header):
       players[jersey] = name
   return players
 
-def _load_goals(game, team, header, player_map={}):
-  goals = []
-  for goal in load_table(header):
-    ts = goal['Time'].text.strip()
-    if ':' not in ts:
-      ts = '0:' + ts
-    m, s = map(float, ts.split(':'))
-    timestamp = datetime.timedelta(minutes=m, seconds=s)
-    player = goal['Goal'].text.strip()
-    player = player_map.get(player, '#' + player)
-    goals.append(Goal(
-      game=game,
-      team=team,
-      period=int(goal['Per'].text.strip()),
-      time=timestamp,
-      player=player))
-    return goals
 
-class Game(object):
-  def __init__(self, start_time, rink, home, away, link):
-    self.start_time = start_time
-    self.rink = rink
-    self.home = home
-    self.away = away
-    self.link = link
-    self.goals = []
-
-  def load_game_scoresheet(self):
-    if not self.link:
-      return
-    print('Loading scoresheet for %s' % self)
-    goals = []
-    soup = get_html(self.link)
-    players = {}
-    away_team_header, home_team_header = [
-        h for h in soup.find_all('th')
-        if 'players in game' in h.text.lower()
-        ]
-    away_players = _load_players(away_team_header.find_parent('table').table.tr)
-    home_players = _load_players(home_team_header.find_parent('table').table.tr)
-
-    headers = soup.find_all('th', text='Scoring')
-    if len(headers) != 2:
-      raise Exception('Expected 2 headers with text="Scoring", found %d at %s' % len(headers), url)
-    away_score_header = headers[0].find_parent('table').find_all('tr')[2]
-    home_score_header = headers[1].find_parent('table').find_all('tr')[2]
-    goals.extend(_load_goals(self, self.away, away_score_header, away_players))
-    goals.extend(_load_goals(self, self.home, home_score_header, home_players))
-    self.goals = goals
-    return goals
-
-  def __str__(self):
-    start = datetime.datetime.strftime(self.start_time, '%c')
-    return '%s on %s: %s(H) vs %s(A)' % (start, self.rink, self.home, self.away)
+def _get_offset_row(th, offset=1):
+  parent_table = th.find_parent('table')
+  rows = parent_table.find_all('tr')
+  if len(rows) <= offset:
+    return None
+  return rows[offset]
 
 
-class Goal(object):
-  def __init__(self, game, team, period, time, player):
-    self.game = game
-    self.team = team
-    self.period = period
-    self.time = time
-    self.player = player
-
-  def _estimate_time(self):
-    estimate = self.game.start_time
-    estimate += datetime.timedelta(minutes=5)  # warmups
-    period_minutes = datetime.timedelta(minutes=22)  # estimate periods at 22m
-    estimate += period_minutes * (self.period - 1)
-    estimate += (period_minutes - self.time)  # Time is time remaining in period
-    return estimate
-
-  def print_livebarn_link(self):
-    estimated_time = self._estimate_time()
-    link = get_livebarn_url(estimated_time, self.game.rink)
-    print('''Generating livebarn link for %s...
-Estimated time is %s on %s rink
-1. Open https://livebarn.com/en/signin and login
-2. Copy the following URL to the address bar
-%s''' % (self, datetime.datetime.strftime(estimated_time, '%c'), self.game.rink, link))
-
-    def __str__(self):
-      return 'Period %s at %s: %s goal by %s' % (self.period, self.time, self.team, self.player)
-
-
-# JSON helpers for REST API
-def load_divisions_json():
-  divisions = load_divisions()
-  json = {}
-  for div, teams in divisions.items():
-    json[div] = []
-    for team in teams.values():
-      team_id = dict(parse.parse_qsl(parse.urlsplit(team.link).query))['team']
-      json[div].append({'name': team.name, 'team_id': team_id})
-  return json
-
-def load_team_json(team_id):
-  games = {}
-  soup = get_html(('https://stats.sharksice.timetoscore.com/display-schedule?'
-    'team={team_id}').format(team_id=team_id))
-  header = soup.table.tr
-  while header.next_sibling.th:
-    header = header.next_sibling
-  for game in load_table(header):
-    game_id = game['Game'].text.strip().replace('*', '')
-    start_time = game['Date'].text.strip() + ' ' + game['Time'].text.strip()
-    year = str(datetime.datetime.now().year)
-    start_time = datetime.datetime.strptime(year + ' ' + start_time, '%Y %a %b %d %I:%M %p')
-    rink = game['Rink'].text.strip()
-    home = game['Home'].text.strip()
-    away = game['Away'].text.strip()
-    away_goals = game['Goals'].text.strip()
-    home_goals = game['Goals2'].text.strip()
-    link = None
-    if game['Game'].a:
-      link = TIMETOSCORE_URL + game['Game'].a['href']
-    g = Game(start_time, rink, home, away, link)
-    games[game_id] = {
-        'start_time': start_time,
-        'rink': rink,
-        'home': home,
-        'home_goals': home_goals,
-        'away': away,
-        'away_goals': away_goals}
-  return games
-
-def load_game_json(game_id):
-  url = 'https://stats.sharksice.timetoscore.com/oss-scoresheet?game_id={game_id}'
+def load_game(game_id):
+  soup = get_html(GAME_URL.format(game_id=game_id))
   events = {'goals': [], 'penalties': []}
-  soup = get_html(url.format(game_id=game_id))
   players = {}
-  away_team_header, home_team_header = [
-      h for h in soup.find_all('th')
-      if 'players in game' in h.text.lower()
-      ]
-  away_players = _load_players(away_team_header.find_parent('table').table.tr)
-  home_players = _load_players(home_team_header.find_parent('table').table.tr)
+  team_players_headers = []
+  scoring_headers = []
+  penalties_headers = []
+  away, home = '', ''
+  for th in soup.find_all('th'):
+    if 'players in game' in th.text.lower():
+      parent_table = th.find_parent('table')
+      if parent_table and parent_table.table and parent_table.table.tr:
+        row = th.find_parent('table').table.tr
+        team_players_headers.append(row)
+    elif th.text.strip() == 'Visitor':
+      away = th.next_sibling.text.strip()
+    elif th.text.strip() == 'Home':
+      home = th.next_sibling.text.strip()
+    elif th.text.strip() == 'Scoring':
+      scoring_headers.append(_get_offset_row(th, 2))
+    elif th.text.strip() == 'Penalties':
+      penalties_headers.append(_get_offset_row(th, 1))
 
-  # TODO: Team names include values from other cells. Fix this.
-  away = soup.find_all('th', text='Visitor')[0].next_sibling.text.strip()
-  home = soup.find_all('th', text='Home')[0].next_sibling.text.strip()
+  if len(team_players_headers) != 2 or len(scoring_headers) != 2:
+    return {'error': 'Failed to find player and goal information for both teams.'}
 
-  headers = soup.find_all('th', text='Scoring')
-  if len(headers) != 2:
-    raise Exception('Expected 2 headers with text="Scoring", found %d at %s' % len(headers), url)
-  away_score_header = headers[0].find_parent('table').find_all('tr')[2]
-  home_score_header = headers[1].find_parent('table').find_all('tr')[2]
-  events['goals'].extend(_load_goals_json(away, away_score_header, away_players))
-  events['goals'].extend(_load_goals_json(home, home_score_header, home_players))
+  away_players = _load_players(team_players_headers[0])
+  home_players = _load_players(team_players_headers[1])
+
+  events['goals'].extend(_load_goals(away, scoring_headers[0], away_players))
+  events['goals'].extend(_load_goals(home, scoring_headers[1], home_players))
+  events['penalties'].extend(_load_penalties(away, penalties_headers[0], away_players))
+  events['penalties'].extend(_load_penalties(home, penalties_headers[1], home_players))
   return events
 
-def _load_goals_json(team, header, player_map={}):
+
+def _load_goals(team, header, player_map={}):
   goals = []
   for goal in load_table(header):
-    ts = goal['Time'].text.strip()
-    if ':' not in ts:
-      ts = '0:' + ts
-    m, s = map(float, ts.split(':'))
-    timestamp = datetime.timedelta(minutes=m, seconds=s)
     player = goal['Goal'].text.strip()
     player = player_map.get(player, '#' + player)
     goals.append({
       'team': team,
       'period': int(goal['Per'].text.strip()),
-      'seconds_remaining': timestamp.seconds,
+      'time': goal['Time'].text.strip(),
       'player': player})
-    return goals
+  return goals
+
+def _load_penalties(team, header, player_map={}):
+  penalties = []
+  for penalty in load_table(header):
+    if not penalty:
+      continue
+    player = penalty['#'].text.strip()
+    player = player_map.get(player, '#' + player)
+    penalties.append({
+      'team': team,
+      'period': int(penalty['Per'].text.strip()),
+      'start_time': penalty['Start'].text.strip(),
+      'off_ice_time': penalty['Off Ice'].text.strip(),
+      'end_time': penalty['End'].text.strip(),
+      'infraction': penalty['Infraction'].text.strip(),
+      'minutes': penalty['Min'].text.strip(),
+      'player': player})
+  return penalties

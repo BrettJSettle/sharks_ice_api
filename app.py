@@ -1,20 +1,28 @@
-from flask import Flask
+from flask import Flask, jsonify
 import sharks_ice_lib as sil
+from flask_restful import Resource, Api
+
 
 app = Flask(__name__)
+api = Api(app)
 
 
-@app.route('/game/<game_id>')
-def game(game_id):
-    return sil.load_game_json(game_id)
+class Division(Resource):
+  def get(self):
+    return jsonify(sil.load_divisions())
 
-@app.route('/team/<team_id>')
-def team(team_id):
-    return sil.load_team_json(team_id)
+class Team(Resource):
+  def get(self, team_id):
+    return jsonify(sil.load_team(team_id))
 
-@app.route('/')
-def api():
-    return sil.load_divisions_json()
+class Game(Resource):
+  def get(self, game_id):
+    return jsonify(sil.load_game(game_id))
+
+api.add_resource(Team, '/team/<string:team_id>')
+api.add_resource(Game, '/game/<string:game_id>')
+api.add_resource(Division, '/')
+
 
 if __name__ == '__main__':
     print('Running Flask app on port 5001')
