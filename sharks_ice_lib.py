@@ -151,10 +151,24 @@ def get_division_players(div_id: str, conference_id: str, season_id: str, reload
         'Team': 'team',
         'Name': 'name', 
         '#': 'number', 
+        'GP': 'games_played',
         'Ass.': 'assists',
         'Goals': 'goals',
-        'Pts': 'points'}, inplace=True)
-    goalie_table.rename(columns={'Team': 'team', 'Name': 'name'}, inplace=True)
+        'Pts': 'points',
+        'Pts/Game': 'ppg',
+        'Hat': 'hat_tricks',
+        'Min': 'penalty_minutes',
+        }, inplace=True)
+    goalie_table.rename(columns={
+        'Team': 'team',
+        'Name': 'name',
+        'GP': 'games_played',
+        'Shots': 'shots',
+        'GA': 'goals_against',
+        'GAA': 'goals_against_average',
+        'Save %': 'save_percentage',
+        'SO': 'shutouts',
+        }, inplace=True)
     players, goalies = [], []
     for _, row in player_table.iterrows():
         players.append(row.to_dict())
