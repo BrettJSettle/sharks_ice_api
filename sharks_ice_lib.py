@@ -3,14 +3,13 @@ import util
 import datetime
 
 TIMETOSCORE_URL = 'https://stats.sharksice.timetoscore.com/'
-TEAM_URL = TIMETOSCORE_URL + 'display-schedule?team={team_id}'
-GAME_URL = TIMETOSCORE_URL + 'oss-scoresheet?game_id={game_id}'
-DIVISION_URL = TIMETOSCORE_URL + \
-    'display-league-stats?league=1&level={division_id}&conf={conference_id}&season={season_id}'
+TEAM_URL = TIMETOSCORE_URL + 'display-schedule'
+GAME_URL = TIMETOSCORE_URL + 'oss-scoresheet'
+DIVISION_URL = TIMETOSCORE_URL + 'display-league-stats'
 MAIN_STATS_URL = TIMETOSCORE_URL + 'display-stats.php'
 
 
-selectors = dict(
+td_selectors = dict(
     # Game stats
     date="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(1)",
     time="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(2)",
@@ -21,9 +20,14 @@ selectors = dict(
     periodLength="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(4) > td:nth-child(2)",
     referee1="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(2)",
     referee2="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(2)",
-    # Team stats
     visitor="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(2)",
     home="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(2)",
+    # Selectors we'll use to verify that parsing other parts were correct.
+    visitorGoals="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(7)",
+    homeGoals="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(7)",
+)
+
+tr_selectors = dict(    
     visitorPlayers="body > table:nth-child(3) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(1) > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+2)",
     homePlayers="body > table:nth-child(3) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+2)",
     visitorScoring="body > div > div.d50l > div.d25l > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+4)",
@@ -32,20 +36,88 @@ selectors = dict(
     homePenalties="body > div > div.d50r > div.d25r > table:nth-child(1) > tbody:nth-child(1) > tr",
     visitorShootout="body > div > div.d50l > div.d25l > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(n+4)",
     homeShootout="body > div > div.d50r > div.d25l > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(n+4)",
-    # Selectors we'll use to verify that parsing other parts were correct.
-    visitorGoals="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(7)",
-    homeGoals="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(7)",
+    
 )
 
 columns = dict(
-    Players=['number', 'position', 'name'],
-    Penalties=['period', 'number', 'infraction', 'minutes', 'off_ice', 'start', 'end', 'on_ice'],
-    Scoring=['period', 'time', 'extra', 'goal', 'assist1', 'assist2'],
-    Shootout=['number', 'player', 'result'],
+    players=['number', 'position', 'name'],
+    penalties=['period', 'number', 'infraction',
+               'minutes', 'offIce', 'start', 'end', 'onIce'],
+    scoring=['period', 'time', 'extra', 'goal', 'assist1', 'assist2'],
+    shootout=['number', 'player', 'result'],
 )
 
-class NoGameStatsError(Exception):
+team_columns_rename = {
+    'GP': 'gamesPlayed',
+    'W': 'wins',
+    'T': 'ties',
+    'L': 'losses',
+    'OTL': 'overtimeLosses',
+    'PTS': 'points',
+    'Streak': 'streak',
+    'Tie Breaker': 'tieBreaker',
+}
+
+player_columns_rename = {
+    'Team': 'team',
+    'Name': 'name',
+    '#': 'number',
+    'GP': 'gamesPlayed',
+    'Ass.': 'assists',
+    'Goals': 'goals',
+    'Pts': 'points',
+    'Pts/Game': 'pointsPerGame',
+    'Hat': 'hatTricks',
+    'Min': 'penaltyMinutes',
+}
+
+goalie_columns_rename = {
+    'Team': 'team',
+    'Name': 'name',
+    'GP': 'gamesPlayed',
+    'Shots': 'shots',
+    'GA': 'goalsAgainst',
+    'GAA': 'goalsAgainstAverage',
+    'Save %': 'savePercentage',
+    'SO': 'shutouts',
+}
+
+game_columns_rename = {
+    'Game': ('id', lambda g: g.replace('*', '').replace('^', '')),
+    'Date': 'date',
+    'Time': 'time',
+    'Rink': 'rink',
+    'League': 'league',
+    'Level': 'level',
+    'Away': 'away',
+    'Home': 'home',
+    'Type': 'type',
+    'Goals.1': 'homeGoals',
+    'Goals': 'visitorGoals',
+    'Scoresheet': None,
+    'Box Score': None,
+}
+
+
+class Error(Exception):
     pass
+
+
+class MissingStatsError(Error):
+    pass
+
+
+def rename(initial: dict, mapping: dict):
+    new_map = {}
+    for key, val in initial.items():
+        mapped_key = mapping.get(key, key)
+        if mapped_key is None:
+            continue
+        if isinstance(mapped_key, tuple):
+            mapped_key, func = mapped_key
+            val = func(val)
+        new_map[mapped_key] = val
+    return new_map
 
 
 def dedupe(headers):
@@ -59,11 +131,14 @@ def dedupe(headers):
     return cols
 
 
-def parse_td(td):
-    if td.a:
-        return {'text': td.a.text.strip(), 'link': td.a['href']}
-    else:
-        return td.text.strip()
+def parse_td_row(row):
+    val = []
+    for td in row('td'):
+        if td('a'):
+            val.append({'text': td.a.text.strip(), 'link': td.a['href']})
+        else:
+            val.append(td.text.strip())
+    return val
 
 
 def load_table(header_row):
@@ -74,7 +149,7 @@ def load_table(header_row):
     columns = dedupe(columns)
     row = header_row.next_sibling
     while row:
-        tds = [parse_td(td) for td in row.find_all('td')]
+        tds = parse_td_row(row)
         if len(tds) <= 1:
             break
         table.append(dict(zip(columns, tds)))
@@ -91,24 +166,19 @@ def fix_players_rows(rows):
     return val
 
 
-def parse_td_rows(eles):
-    val = []
-    for ele in eles:
-        if not ele.find('td'):
-            continue
-        val.append([i.text.strip() for i in ele.children])
-    return val
-
 @util.cache_json('seasons')
 def get_seasons():
     soup = util.get_html(MAIN_STATS_URL, params={'league': '1'})
-    season_ids = {o.text.strip(): int(o['value']) for o in soup.find('select')('option')}
+    season_ids = {o.text.strip(): int(o['value'])
+                  for o in soup.find('select')('option')}
     # Hack to use real season ID instead of "0" for current season.
     season_ids['Current'] = max(season_ids.values()) + 1
     return season_ids
 
+
 def get_current_season():
     return get_seasons()['Current']
+
 
 def _load_division(row):
     div_name = row.th.text.strip()[15:]
@@ -117,20 +187,30 @@ def _load_division(row):
     level_id = util.get_value_from_link(href, 'level')
     conference_id = util.get_value_from_link(href, 'conf')
     season_id = util.get_value_from_link(href, 'season')
-    # Team stats table starts on next row.
+    # Jump down to teams subtable header row.
+    while len(row('th')) == 1:
+        row = row.next_sibling
     teams = []
-    for team_row in load_table(row.next_sibling.next_sibling):
+    for team_row in load_table(row):
         team_a = team_row.pop('Team')
         team_row['name'] = team_a['text']
         team_row['id'] = util.get_value_from_link(team_a['link'], 'team')
+        team_row = rename(team_row, team_columns_rename)
         teams.append(team_row)
-    return {'name': div_name, 'id': level_id, 'conference_id': conference_id, 'season_id': season_id, 'teams': teams}
+    return {
+        'name': div_name,
+        'id': level_id,
+        'conferenceId': conference_id,
+        'seasonId': season_id,
+        'teams': teams,
+    }
 
 
 # JSON helpers for REST API
-@util.cache_json('division_stats', max_age=datetime.timedelta(hours=1))
-def get_divisions(reload=False) -> list:
-    soup = util.get_html(MAIN_STATS_URL, params={'league': '1'})
+@util.cache_json('seasons/{season_id}/divisions', max_age=datetime.timedelta(hours=1))
+def get_divisions(season_id: int, reload=False) -> list:
+    soup = util.get_html(MAIN_STATS_URL, params=dict(
+        league=1, season=season_id))
     divisions = []
     for row in soup.table.find_all('tr'):
         if not row.th:
@@ -140,47 +220,32 @@ def get_divisions(reload=False) -> list:
     return divisions
 
 
-@util.cache_json('division/{div_id}#{conference_id}_players', max_age=datetime.timedelta(minutes=10))
+@util.cache_json('seasons/{season_id}/division/{div_id}#{conference_id}_players', max_age=datetime.timedelta(minutes=10))
 def get_division_players(div_id: str, conference_id: str, season_id: str, reload=False):
-    html = util.get_html(DIVISION_URL.format(
-        division_id=div_id, conference_id=conference_id, season_id=season_id))
+    if season_id.lower() == 'current':
+        season_id = get_current_season()
+    html = util.get_html(DIVISION_URL, params=dict(
+        level=div_id, conf=conference_id, season=season_id, league=1))
+    if not html.find('table'):
+        raise Exception('Error loading division stats for division ID %s (conference %s)' % (
+            div_id, conference_id))
     player_table, goalie_table = pd.read_html(str(html), header=1)
     player_table.fillna('', inplace=True)
     goalie_table.fillna('', inplace=True)
-    player_table.rename(columns={
-        'Team': 'team',
-        'Name': 'name', 
-        '#': 'number', 
-        'GP': 'games_played',
-        'Ass.': 'assists',
-        'Goals': 'goals',
-        'Pts': 'points',
-        'Pts/Game': 'ppg',
-        'Hat': 'hat_tricks',
-        'Min': 'penalty_minutes',
-        }, inplace=True)
-    goalie_table.rename(columns={
-        'Team': 'team',
-        'Name': 'name',
-        'GP': 'games_played',
-        'Shots': 'shots',
-        'GA': 'goals_against',
-        'GAA': 'goals_against_average',
-        'Save %': 'save_percentage',
-        'SO': 'shutouts',
-        }, inplace=True)
     players, goalies = [], []
     for _, row in player_table.iterrows():
-        players.append(row.to_dict())
+        row = rename(row.to_dict(), player_columns_rename)
+        players.append(row)
     for _, row in goalie_table.iterrows():
-        goalies.append(row.to_dict())
+        row = rename(row.to_dict(), goalie_columns_rename)
+        goalies.append(row)
     return players, goalies
 
 
-@util.cache_json('teams/{team_id}')
-def get_team(team_id: int, **kwargs):
+@util.cache_json('seasons/{season_id}/teams/{team_id}')
+def get_team(season_id: int, team_id: int, reload=False):
     info = {}
-    soup = util.get_html(TEAM_URL.format(team_id=team_id, **kwargs))
+    soup = util.get_html(TEAM_URL, params=dict(season=season_id, team=team_id))
     if not soup.table:
         return {}
     webcal = [a['href']
@@ -192,60 +257,52 @@ def get_team(team_id: int, **kwargs):
     results = pd.read_html(str(soup.table), header=1)[0]
     results.fillna('', inplace=True)
     for _, row in results.iterrows():
-        row = row.to_dict()
-        if 'Goals.1' in row:
-          row['away_goals'] = row.pop('Goals.1')
-          row['home_goals'] = row.pop('Goals')
-        row['id'] = int(row.pop('Game').replace('*', '').replace('^', ''))
-        # lowercase keys are better.
-        row = {k.lower(): v for k, v in row.items()}
+        row = rename(row.to_dict(), game_columns_rename)
         games.append(row)
     info['games'] = games
     return info
 
+
 @util.cache_json('games/{game_id}', max_age=None)
 def get_game_stats(game_id: int, reload=False):
-    url = GAME_URL.format(game_id=game_id)
-    soup = util.get_html(url)
-    # TODO: Check if game has happened yet?
-    if not soup.select_one(selectors['periodLength']).text.strip():
-        raise NoGameStatsError()
+    soup = util.get_html(
+        GAME_URL, params=dict(game_id=game_id))
+    if not soup.select_one(td_selectors['periodLength']):
+        raise MissingStatsError("No game stats for %s" % game_id)
     data = {}
-    for name, selector in selectors.items():
-        data[name] = []
-        if name in ('date', 'time', 'league', 'level', 'location', 'scorekeeper', 'referee1', 'referee2', 'visitor', 'home', 'visitorGoals', 'homeGoals', 'periodLength'):
-            ele = soup.select_one(selector)
-            val = ele.text.strip()
-            if ':' in val:
-                val = val.split(':', 1)[1]
-        elif name in ('homePlayers', 'visitorPlayers', 'homePenalties', 'visitorPenalties', 'homeScoring', 'visitorScoring', 'homeShootout', 'visitorShootout'):
-            prefix = 'home' if 'home' in name else 'visitor'
-            suffix = name.replace(prefix, '')
-            eles = soup.select(selector)
-            rows = parse_td_rows(eles)
-            # Hack for players tables.
-            if name in ('homePlayers', 'visitorPlayers'):
-                rows = fix_players_rows(rows)
-            keys = columns[suffix]
-            val = [dict(zip(keys, row)) for row in rows]
-        else:
-            raise Exception('Unhandled section %s' % name)
+    for name, selector in td_selectors.items():
+        ele = soup.select_one(selector)
+        val = ele.text.strip()
+        if ':' in val:
+            val = val.split(':', 1)[1]
+        data[name] = val
+
+    for name, selector in tr_selectors.items():
+        prefix = 'home' if name.startswith('home') else 'visitor'
+        suffix = name[len(prefix):].lower()
+        eles = soup.select(selector)
+        rows = [parse_td_row(row) for row in eles if row('td')]
+        # Hack for players tables.
+        if name.endswith('Players'):
+            rows = fix_players_rows(rows)
+        val = [dict(zip(columns[suffix], row)) for row in rows]
         data[name] = val
     return data
 
 
 def test():
-    divs = get_divisions()
+    divs = get_divisions(season_id='current')
     div_players = {}
     for div in divs:
-        print('Loading players for %s#%s' % (div['id'], div['conference_id']))
-        div_players[div['id']] = get_division_players(div_id=div['id'], conference_id=div['conference_id'], season_id=div['season_id'])
-
+        print('Loading players for %s#%s' % (div['id'], div['conferenceId']))
+        div_players[div['id']] = get_division_players(
+            div_id=div['id'], conference_id=div['conferenceId'], season_id=div['seasonId'])
+        
     teams = []
     for div in divs:
         for team in div['teams']:
             print('Loading games for %s' % team['id'])
-            teams.append(get_team(team_id=team['id']))
+            teams.append(get_team(season_id='current', team_id=team['id']))
     for team in teams:
         for game in team['games']:
             game_time = util.parse_game_time(game['Date'], game['Time'])
@@ -255,8 +312,9 @@ def test():
             print('Loading stats for %s' % game['id'])
             try:
                 stats = get_game_stats(game_id=game['id'])
-            except NoGameStatsError:
+            except MissingStatsError:
                 pass
+
 
 if __name__ == '__main__':
     if input('test all?') == 'y':

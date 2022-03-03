@@ -21,39 +21,55 @@ class Main(Resource):
     def get(self):
         return jsonify({
             'resources': [
-                '/divisions',
-                '/divisions/<div_id>/conference/<conf_id>',
-                '/games/<id>',
-                '/teams/<id>',
+                '/seasons',
+                '/seasons/<season_id>/divisions',
+                '/seasons/<season_id>/divisions/<div_id>/<conf_id=0>',
+                '/seasons/<season_id>/games/<id>',
+                '/seasons/<season_id>/teams/<id>',
             ]
         })
 
 
-class Division(Resource):
+class Seasons(Resource):
     def get(self):
-        return jsonify({'divisions': sil.get_divisions()})
+        try:
+            return jsonify({'seasons': sil.get_seasons()})
+        except sil.Error as e:
+            return jsonify({'error': str(e)}), 500
 
+class Divisions(Resource):
+    def get(self, season_id: str):
+        try:
+            return jsonify({'divisions': sil.get_divisions(season_id=season_id)})
+        except sil.Error as e:
+            return jsonify({'error': str(e)})
 
 class DivisionPlayers(Resource):
-    def get(self, division_id, conference_id):
-        args = parser.parse_args()
-        season_id = args.get('season_id', sil.get_current_season())
-        players, goalies = sil.get_division_players(
-            div_id=division_id, season_id=season_id, conference_id=conference_id, reload=get_reload())
-        return jsonify({
-            'players': players,
-            'goalies': goalies
-        })
-
+    def get(self, season_id: str, division_id: int, conference_id: str = '0'):
+        try:
+            players, goalies = sil.get_division_players(
+                div_id=division_id, season_id=season_id, conference_id=conference_id, reload=get_reload())
+            return jsonify({
+                'players': players,
+                'goalies': goalies
+            })
+        except sil.Error as e:
+            return jsonify({'error': str(e)})
 
 class Team(Resource):
-    def get(self, team_id):
-        return jsonify(sil.get_team(team_id=team_id, reload=get_reload()))
+    def get(self, season_id: str, team_id: str):
+        try:
+            return jsonify(sil.get_team(season_id=season_id, team_id=team_id, reload=get_reload()))
+        except sil.Error as e:
+            return jsonify({'error': str(e)})
 
 
 class Game(Resource):
-    def get(self, game_id):
-        return jsonify(sil.get_game_stats(game_id=game_id, reload=get_reload()))
+    def get(self, game_id: str):
+        try:
+            return jsonify(sil.get_game_stats(game_id=game_id, reload=get_reload()))
+        except sil.Error as e:
+            return jsonify({'error': str(e)})
 
 
 @app.errorhandler(404)
@@ -63,11 +79,13 @@ def page_not_found(e):
 
 
 api.add_resource(Main, '/')
-api.add_resource(Division, '/divisions')
-api.add_resource(
-    DivisionPlayers, '/divisions/<string:division_id>/conference/<string:conference_id>')
-api.add_resource(Team, '/teams/<string:team_id>')
-api.add_resource(Game, '/games/<string:game_id>')
+api.add_resource(Seasons, '/seasons')
+api.add_resource(Divisions, '/seasons/<string:season_id>/divisions')
+api.add_resource(DivisionPlayers,
+                 '/seasons/<string:season_id>/divisions/<int:division_id>/conference/<string:conference_id>',
+                 '/seasons/<string:season_id>/divisions/<int:division_id>')
+api.add_resource(Team, '/seasons/<string:season_id>/teams/<int:team_id>')
+api.add_resource(Game, '/games/<int:game_id>')
 
 
 if __name__ == '__main__':
