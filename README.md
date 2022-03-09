@@ -10,6 +10,7 @@ Base URL: http://bsettle.com/sharks_ice/api
 Notes:
 * The `seasonId` field can be an ID from the `/seasons` endpoint, or the string `"current"` for the current season.
 * Add `reload=true` to the end of any endpoint to bypass cached data and force a new scrape.
+* Internal errors will return `{error: <message>}` to the caller.
 
 ### `/`
 

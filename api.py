@@ -22,10 +22,10 @@ class Main(Resource):
         return jsonify({
             'resources': [
                 '/seasons',
-                '/seasons/<season_id>/divisions',
-                '/seasons/<season_id>/divisions/<div_id>/<conf_id=0>',
-                '/seasons/<season_id>/games/<id>',
-                '/seasons/<season_id>/teams/<id>',
+                '/seasons/<seasonId>/divisions',
+                '/seasons/<seasonId>/divisions/<divisionId>/conference/<conferenceId>',
+                '/seasons/<seasonId>/teams/<teamId>',
+                '/games/<gameId>',
             ]
         })
 
@@ -75,7 +75,7 @@ class Game(Resource):
 @app.errorhandler(404)
 def page_not_found(e):
     # note that we set the 404 status explicitly
-    return 'Flask 404', 404
+    return '404 Page Not Found', 404
 
 
 api.add_resource(Main, '/')
