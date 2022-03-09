@@ -1,72 +1,118 @@
 # Sharks Ice TimeToScore REST API
 
-I designed this REST API to serve Solar4America Sharks Ice league stats. Data is cached locally when it is parsed from https://stats.sharksice.timetoscore.com/display-stats.php?league=1&season=0. This is very fragile.
+I designed this REST API to serve Solar4America Sharks Ice league stats. Data is scraped from https://stats.sharksice.timetoscore.com/display-stats.php?league=1&season=0 and downstream links, and cached locally with a maximum age of a few days. This is very fragile so please reach out to me before relying on it.
+
 
 ## Endpoints
 
-Base URL: http://bsettle.com/sharks_ice/api/
+Base URL: http://bsettle.com/sharks_ice/api
 
-### /
+Notes:
+* The `seasonId` field can be an ID from the `/seasons` endpoint, or the string `"current"` for the current season.
+* Add `reload=true` to the end of any endpoint to bypass cached data and force a new scrape.
 
-Returns the list of resources.
+### `/`
 
-### /divisions
-Scrapes divisions and team stats from the [main stats page](https://stats.sharksice.timetoscore.com/display-stats.php).
+Returns information about the list of endpoints below.
 
-Reponse
+### `/seasons`
+
+#### Response
+```js
+{
+  seasons: {
+    [season name: str]: [seasonId: int]
+  }
+}
+```
+
+### `/seasons/<seasonId>/divisions`
+Scrapes divisions and team stats from the https://stats.sharksice.timetoscore.com/display-stats.php.
+
+#### Reponse
 ```js
 {
 divisions: [{
   id: string,
-  conference_id: string,
-  season_id: string,
+  conferenceId: string,
+  seasonId: string,
   name: string,
   teams: [{
     id: string,
     name: string,
-    GP: string,
-    W: string,
-    L: string,
-    T: string,
-    OTL: string,
-    Streak: string,
-    Tie Breaker: string
+    gamesPlayed: string,
+    wins: string,
+    losses: string,
+    ties: string,
+    overtimeLosses: string,
+    streak: string,
+    tieBreaker: string
   }]
 }]
-}```
+}
+```
 
-### /divisions/{div\_id}/conference/{conf\_id}
-Response
+### `/seasons/<seasonId>/divisions/<divisionId>/conference/<conferenceId>`
+Scrapes division player stats from https://stats.sharksice.timetoscore.com/display-league-stats
+
+Notes:
+* `/seasons/<seasonId>/divisions/<divisionId>` will use the default value of `conferenceId=0`
+
+#### Response
 ```js
 {
   players: [{
     team: string,
     name: string,
     number: string,
-    games_played: int,
+    gamesPlayed: int,
     goals: int,
     assists: int,
     points: int,
     ppg: double,
-    hat_tricks: int,
-    penalty_minutes: int
+    hatTricks: int,
+    penaltyMinutes: int
   }],
   goalies: [{
     team: string,
     name: string,
-    games_played: int,
+    gamesPlayed: int,
     shots: int,
-    goals_against: int,
-    goals_against_average: double,
-    save_percentage: double,
+    goalsAgainst: int,
+    goalsAgainstAverage: double,
+    savePercentage: double,
     shutouts: int
   ]}
 }
 ```
 
-### /games/{game\_id}
+### `/seasons/{seasonId}/teams/{teamId}`
+Scrapes team games stats from https://stats.sharksice.timetoscore.com/display-schedule
 
-Reponse
+#### Response
+```js
+{
+  calendar: string,
+  games: [{
+    id: string,
+    date: string,
+    time: string,
+    rink: string,
+    league: string,
+    level: string,
+    home: string,
+    away: string,
+    type: string,
+    homeGoals: int,
+    awayGoals: int,
+  }]
+}
+```
+
+### `/games/{gameId}`
+Scrapes game scoresheet stats from https://stats.sharksice.timetoscore.com/oss-scoresheet
+
+#### Reponse
 ```js
 {
   date: string,
@@ -100,10 +146,10 @@ Reponse
     period: string,
     minutes: string,
     infraction: string,
-    off_ice: string,
+    offIce: string,
     start: string,
     end: string,
-    on_ice: string,
+    onIce: string,
   }],
   homeShootouts: [{
     name: string,
@@ -118,28 +164,6 @@ Reponse
 }
 ```
 
-### teams/{team\_id}
-
-Response
-```js
-{
-  calendar: string,
-  games: [{
-    id: string,
-    date: string,
-    time: string,
-    rink: string,
-    league: string,
-    level: string,
-    home: string,
-    away: string,
-    type: string,
-    home_goals: int,
-    away_goals: int,
-  }]
-}
-```
-
-References:
+## References:
 * uWSGI + Nginx setup by following instructions at https://www.digitalocean.com/community/tutorials/how-to-serve-flask-applications-with-uswgi-and-nginx-on-ubuntu-18-04
 * Let's Encrypt for SSL Cert: https://www.digitalocean.com/community/tutorials/how-to-secure-nginx-with-let-s-encrypt-on-ubuntu-18-04
