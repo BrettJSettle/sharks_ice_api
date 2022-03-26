@@ -27,7 +27,7 @@ td_selectors = dict(
     homeGoals="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(7)",
 )
 
-tr_selectors = dict(    
+tr_selectors = dict(
     visitorPlayers="body > table:nth-child(3) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(1) > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+2)",
     homePlayers="body > table:nth-child(3) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+2)",
     visitorScoring="body > div > div.d50l > div.d25l > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+4)",
@@ -36,7 +36,7 @@ tr_selectors = dict(
     homePenalties="body > div > div.d50r > div.d25r > table:nth-child(1) > tbody:nth-child(1) > tr",
     visitorShootout="body > div > div.d50l > div.d25l > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(n+4)",
     homeShootout="body > div > div.d50r > div.d25l > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(n+4)",
-    
+
 )
 
 columns = dict(
@@ -179,11 +179,13 @@ def get_seasons():
 def get_current_season():
     return get_seasons()['Current']
 
-def get_team_id(name):
-    for div in get_divisions():
-        if div['name'] == name:
-            return div['id']
-    raise Exception('Could not find team: %s' % name)
+
+def get_team_id(team_name: str, season_id='current'):
+    for div in get_divisions(season_id=season_id):
+        for team in div['teams']:
+            if team['name'].lower() == team_name.lower():
+                return team['id']
+    raise Exception('Could not find team: %s' % team_name)
 
 
 def _load_division(row):
@@ -214,7 +216,7 @@ def _load_division(row):
 
 # JSON helpers for REST API
 @util.cache_json('seasons/{season_id}/divisions', max_age=datetime.timedelta(hours=1))
-def get_divisions(season_id: int, reload=False) -> list:
+def get_divisions(season_id: int = 0, reload=False) -> list:
     soup = util.get_html(MAIN_STATS_URL, params=dict(
         league=1, season=season_id))
     divisions = []
@@ -303,7 +305,7 @@ def test():
         print('Loading players for %s#%s' % (div['id'], div['conferenceId']))
         div_players[div['id']] = get_division_players(
             div_id=div['id'], conference_id=div['conferenceId'], season_id=div['seasonId'])
-        
+
     teams = []
     for div in divs:
         for team in div['teams']:

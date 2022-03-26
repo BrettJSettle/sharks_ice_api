@@ -37,12 +37,14 @@ class Seasons(Resource):
         except sil.Error as e:
             return jsonify({'error': str(e)}), 500
 
+
 class Divisions(Resource):
     def get(self, season_id: str):
         try:
             return jsonify({'divisions': sil.get_divisions(season_id=season_id)})
         except sil.Error as e:
             return jsonify({'error': str(e)})
+
 
 class DivisionPlayers(Resource):
     def get(self, season_id: str, division_id: int, conference_id: str = '0'):
@@ -56,6 +58,7 @@ class DivisionPlayers(Resource):
         except sil.Error as e:
             return jsonify({'error': str(e)})
 
+
 class Team(Resource):
     def get(self, season_id: str, team_id: str):
         try:
@@ -63,10 +66,11 @@ class Team(Resource):
         except sil.Error as e:
             return jsonify({'error': str(e)})
 
+
 class TeamName(Resource):
     def get(self, season_id: str):
         try:
-            team_id = sil.get_team_id(request.args.get('team'))
+            team_id = sil.get_team_id(season_id=season_id, team_name=request.args.get('team'))
             return jsonify(sil.get_team(season_id=season_id, team_id=team_id, reload=get_reload()))
         except sil.Error as e:
             return jsonify({'error': str(e)})
