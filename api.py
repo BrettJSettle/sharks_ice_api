@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import sharks_ice_lib as sil
 from flask_restful import Resource, Api, reqparse
 from flask_cors import CORS
@@ -63,6 +63,14 @@ class Team(Resource):
         except sil.Error as e:
             return jsonify({'error': str(e)})
 
+class TeamName(Resource):
+    def get(self, season_id: str):
+        try:
+            team_id = sil.get_team_id(request.args.get('team'))
+            return jsonify(sil.get_team(season_id=season_id, team_id=team_id, reload=get_reload()))
+        except sil.Error as e:
+            return jsonify({'error': str(e)})
+
 
 class Game(Resource):
     def get(self, game_id: str):
@@ -85,6 +93,7 @@ api.add_resource(DivisionPlayers,
                  '/seasons/<string:season_id>/divisions/<int:division_id>/conference/<string:conference_id>',
                  '/seasons/<string:season_id>/divisions/<int:division_id>')
 api.add_resource(Team, '/seasons/<string:season_id>/teams/<int:team_id>')
+api.add_resource(TeamName, '/seasons/<string:season_id>/teams')
 api.add_resource(Game, '/games/<int:game_id>')
 
 

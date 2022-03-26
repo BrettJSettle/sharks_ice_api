@@ -179,6 +179,12 @@ def get_seasons():
 def get_current_season():
     return get_seasons()['Current']
 
+def get_team_id(name):
+    for div in get_divisions():
+        if div['name'] == name:
+            return div['id']
+    raise Exception('Could not find team: %s' % name)
+
 
 def _load_division(row):
     div_name = row.th.text.strip()[15:]
