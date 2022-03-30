@@ -189,7 +189,7 @@ def get_team_id(team_name: str, season_id='current'):
 
 
 def _load_division(row):
-    div_name = row.th.text.strip()[15:]
+    div_name = row.th.text.strip()
     # Get Div ID from next row.
     href = row.next_sibling.a['href'].strip()
     level_id = util.get_value_from_link(href, 'level')
