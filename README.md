@@ -126,7 +126,7 @@ Scrapes game scoresheet stats from https://stats.sharksice.timetoscore.com/oss-s
   referee2: string,
   scorekeeper: string,
   home: string,
-  visitor: string,
+  away: string,
   homeGoals: int,
   homePlayers: [{
     name: string,
@@ -157,11 +157,11 @@ Scrapes game scoresheet stats from https://stats.sharksice.timetoscore.com/oss-s
     number: string,
     result: string,
   }],
-  visitorGoals: ...,
-  visitorPlayers: ...,
-  visitorScoring: ...,
-  visitorPenalties: ...,
-  visitorShootouts: ...  
+  awayGoals: ...,
+  awayPlayers: ...,
+  awayScoring: ...,
+  awayPenalties: ...,
+  awayShootouts: ...  
 }
 ```
 

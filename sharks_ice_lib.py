@@ -20,21 +20,21 @@ td_selectors = dict(
     periodLength="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(4) > td:nth-child(2)",
     referee1="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(2)",
     referee2="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(2)",
-    visitor="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(2)",
+    away="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(2)",
     home="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(2)",
     # Selectors we'll use to verify that parsing other parts were correct.
-    visitorGoals="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(7)",
+    awayGoals="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(7)",
     homeGoals="body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(7)",
 )
 
 tr_selectors = dict(
-    visitorPlayers="body > table:nth-child(3) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(1) > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+2)",
+    awayPlayers="body > table:nth-child(3) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(1) > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+2)",
     homePlayers="body > table:nth-child(3) > tbody:nth-child(1) > tr:nth-child(1) > td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(2) > td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+2)",
-    visitorScoring="body > div > div.d50l > div.d25l > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+4)",
+    awayScoring="body > div > div.d50l > div.d25l > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+4)",
     homeScoring="body > div > div.d50r > div.d25l > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(n+4)",
-    visitorPenalties="body > div > div.d50l > div.d25r > table:nth-child(1) > tbody:nth-child(1) > tr",
+    awayPenalties="body > div > div.d50l > div.d25r > table:nth-child(1) > tbody:nth-child(1) > tr",
     homePenalties="body > div > div.d50r > div.d25r > table:nth-child(1) > tbody:nth-child(1) > tr",
-    visitorShootout="body > div > div.d50l > div.d25l > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(n+4)",
+    awayShootout="body > div > div.d50l > div.d25l > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(n+4)",
     homeShootout="body > div > div.d50r > div.d25l > table:nth-child(2) > tbody:nth-child(1) > tr:nth-child(n+4)",
 
 )
@@ -93,7 +93,7 @@ game_columns_rename = {
     'Home': 'home',
     'Type': 'type',
     'Goals.1': 'homeGoals',
-    'Goals': 'visitorGoals',
+    'Goals': 'awayGoals',
     'Scoresheet': None,
     'Box Score': None,
 }
@@ -286,7 +286,7 @@ def get_game_stats(game_id: int, reload=False):
         data[name] = val
 
     for name, selector in tr_selectors.items():
-        prefix = 'home' if name.startswith('home') else 'visitor'
+        prefix = 'home' if name.startswith('home') else 'away'
         suffix = name[len(prefix):].lower()
         eles = soup.select(selector)
         rows = [parse_td_row(row) for row in eles if row('td')]
