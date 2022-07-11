@@ -25,6 +25,7 @@ class Main(Resource):
                 '/seasons/<seasonId>/divisions/<divisionId>/conference/<conferenceId>',
                 '/seasons/<seasonId>/teams/<teamId>',
                 '/games/<gameId>',
+                '/games'
             ]
         })
 
@@ -82,6 +83,13 @@ class Game(Resource):
         except sil.Error as e:
             return jsonify({'error': str(e)})
 
+class Games(Resource):
+    def get(self):
+        try:
+            return jsonify(sil.get_games())
+        except sil.Error as e:
+            return jsonify({'error': str(e)})
+
 
 @app.errorhandler(404)
 def page_not_found(e):
@@ -97,6 +105,7 @@ api.add_resource(DivisionPlayers,
 api.add_resource(Team, '/seasons/<string:season_id>/teams/<int:team_id>')
 api.add_resource(TeamName, '/seasons/<string:season_id>/teams')
 api.add_resource(Game, '/games/<int:game_id>')
+api.add_resource(Games, '/games')
 
 
 if __name__ == '__main__':

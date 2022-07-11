@@ -270,6 +270,16 @@ def get_team(season_id: int, team_id: int, reload=False):
     info['games'] = games
     return info
 
+@util.cache_json('/games', max_age=datetime.datetime(hour=2))
+def get_games(reload=False):
+    current_season = get_current_season()
+    divs = get_divisions(season_id=current_season)
+    games = {}
+    for div in divs:
+        for team in div['teams']:
+            team_info = get_team(season_id=current_season, team_id=team['id'])
+            games.update({g['id']: g for g in team_info['games']})
+    return {'games': games.values()}
 
 @util.cache_json('games/{game_id}', max_age=None)
 def get_game_stats(game_id: int, reload=False):
@@ -326,5 +336,6 @@ def test():
 
 if __name__ == '__main__':
     if input('test all?') == 'y':
-        test()
+        # test()
+        get_games()
     pass
