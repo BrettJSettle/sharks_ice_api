@@ -263,14 +263,23 @@ def get_team(season_id: int, team_id: int, reload=False):
 
     games = []
     results = pd.read_html(str(soup.table), header=1)[0]
-    results.fillna('', inplace=True)
+    results = results.fillna(pd.np.nan).replace([pd.np.nan], [None])
     for _, row in results.iterrows():
         row = rename(row.to_dict(), game_columns_rename)
+        # Goals can be str, int, or float for some reason. Correct all to string to allow for shootouts (e.g. "4 S")
+        if isinstance(row['homeGoals'], float):
+            row['homeGoals'] = str(int(row['homeGoals']))
+        elif row['homeGoals'] is None:
+            del row['homeGoals']
+        if isinstance(row['awayGoals'], float):
+            row['awayGoals'] = str(int(row['awayGoals']))
+        elif row['awayGoals'] is None:
+            del row['awayGoals']
         games.append(row)
     info['games'] = games
     return info
 
-@util.cache_json('/games', max_age=datetime.datetime(hour=2))
+@util.cache_json('games', max_age=datetime.timedelta(hours=2))
 def get_games(reload=False):
     current_season = get_current_season()
     divs = get_divisions(season_id=current_season)
@@ -279,7 +288,7 @@ def get_games(reload=False):
         for team in div['teams']:
             team_info = get_team(season_id=current_season, team_id=team['id'])
             games.update({g['id']: g for g in team_info['games']})
-    return {'games': games.values()}
+    return {'games': list(games.values())}
 
 @util.cache_json('games/{game_id}', max_age=None)
 def get_game_stats(game_id: int, reload=False):
@@ -290,6 +299,8 @@ def get_game_stats(game_id: int, reload=False):
     data = {}
     for name, selector in td_selectors.items():
         ele = soup.select_one(selector)
+        if not ele and name == 'scorekeeper':
+            raise MissingStatsError("Failed to read data for game. Has it happened yet?")
         val = ele.text.strip()
         if ':' in val:
             val = val.split(':', 1)[1]
