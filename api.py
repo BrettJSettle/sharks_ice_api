@@ -71,6 +71,8 @@ class TeamName(Resource):
     def get(self, season_id: str):
         try:
             team_id = sil.get_team_id(season_id=season_id, team_name=request.args.get('team'))
+            if not team_id:
+                return jsonify(sil.get_all_teams(season_id=season_id, reload=get_reload()))
             return jsonify(sil.get_team(season_id=season_id, team_id=team_id, reload=get_reload()))
         except sil.Error as e:
             return jsonify({'error': str(e)})
@@ -86,7 +88,7 @@ class Game(Resource):
 class Games(Resource):
     def get(self):
         try:
-            return jsonify(sil.get_games())
+            return jsonify(sil.get_games(reload=get_reload()))
         except sil.Error as e:
             return jsonify({'error': str(e)})
 

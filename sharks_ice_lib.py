@@ -1,6 +1,8 @@
 import pandas as pd
 import util
 import datetime
+from difflib import SequenceMatcher
+import numpy as np
 
 TIMETOSCORE_URL = 'https://stats.sharksice.timetoscore.com/'
 TEAM_URL = TIMETOSCORE_URL + 'display-schedule'
@@ -83,7 +85,7 @@ goalie_columns_rename = {
 }
 
 game_columns_rename = {
-    'Game': ('id', lambda g: g.replace('*', '').replace('^', '')),
+    'Game': ('id', lambda g: str(g).replace('*', '').replace('^', '')),
     'Date': 'date',
     'Time': 'time',
     'Rink': 'rink',
@@ -177,15 +179,28 @@ def get_seasons():
 
 
 def get_current_season():
-    return get_seasons()['Current']
+    return '0' # get_seasons()['Current']
 
 
-def get_team_id(team_name: str, season_id='current'):
+def similar(a, b):
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def get_team_id(team_name: str, season_id='current') -> str:
+    if not team_name:
+        return ''
+    matches = {}
     for div in get_divisions(season_id=season_id):
         for team in div['teams']:
-            if team['name'].lower() == team_name.lower():
+            score = similar(team_name.lower(), team['name'].lower())
+            if score == 1:
                 return team['id']
-    raise Exception('Could not find team: %s' % team_name)
+            matches[team['id']] = (team['name'], score)
+    top_matches = sorted(matches, key=lambda id: -matches[id][1])[:5]
+    if matches[top_matches[0]][1] > .9:
+        return top_matches[0]
+    options = ','.join(map(lambda id: '%s: %s(%d%%)' % (id, matches[id][0], 100 * matches[id][1]), top_matches))
+    raise Error('Could not find team named "%s". Did you mean %s' % (team_name, options))
 
 
 def _load_division(row):
@@ -263,7 +278,7 @@ def get_team(season_id: int, team_id: int, reload=False):
 
     games = []
     results = pd.read_html(str(soup.table), header=1)[0]
-    results = results.fillna(pd.np.nan).replace([pd.np.nan], [None])
+    results = results.fillna(np.nan).replace([np.nan], [None])
     for _, row in results.iterrows():
         row = rename(row.to_dict(), game_columns_rename)
         # Goals can be str, int, or float for some reason. Correct all to string to allow for shootouts (e.g. "4 S")
@@ -279,11 +294,23 @@ def get_team(season_id: int, team_id: int, reload=False):
     info['games'] = games
     return info
 
+
+@util.cache_json('seasons/{season_id}/teams')
+def get_all_teams(season_id: int, reload=False):
+    teams = []
+    for div in get_divisions(season_id=season_id):
+        for team in div['teams']:
+            teams.append(team)
+    teams.sort(key=lambda team: team['name'])
+    return teams
+
+
 @util.cache_json('games', max_age=datetime.timedelta(hours=2))
 def get_games(reload=False):
     current_season = get_current_season()
-    divs = get_divisions(season_id=current_season)
+    divs = get_divisions(season_id=current_season, reload=reload)
     games = {}
+    print(divs)
     for div in divs:
         for team in div['teams']:
             team_info = get_team(season_id=current_season, team_id=team['id'])
