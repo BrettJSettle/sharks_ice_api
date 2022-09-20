@@ -174,12 +174,12 @@ def get_seasons():
     season_ids = {o.text.strip(): int(o['value'])
                   for o in soup.find('select')('option')}
     # Hack to use real season ID instead of "0" for current season.
-    season_ids['Current'] = max(season_ids.values()) + 1
+    # season_ids['Current'] = max(season_ids.values()) + 1
     return season_ids
 
 
 def get_current_season():
-    return '0' # get_seasons()['Current']
+    return get_seasons()['Current']
 
 
 def similar(a, b):
