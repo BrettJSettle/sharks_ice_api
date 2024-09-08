@@ -1,0 +1,61 @@
+.crop {
+  width: 1220px;
+  height: 750px;
+  overflow: hidden;
+}
+
+.crop img {
+  width: 1200px;
+  height: 800px;
+  margin: -15px 0 0 -360px;
+}
+
+.rink {
+position: fixed;
+height: 60px;
+width: 150px;
+opacity: .5;
+}
+
+.rink-vertical {
+position: fixed;
+width: 60px;
+height: 150px;
+opacity: .5;
+}
+
+#orange {
+background-color: orange;
+top: 5%;
+left: 9.1%;
+}
+
+#black {
+background-color: black;
+top: 260px;
+left: 304px;
+}
+
+#grey {
+background-color: grey;
+top: 40px;
+left: 270px;
+}
+
+#white {
+background-color: white;
+top: 176px;
+left: 75px;
+}
+
+#sharks {
+background-color: teal;
+  top: 308px;
+left: 105px;
+}
+
+#techcu {
+background-color: turquoise;
+  top: 420px;
+left: 104px;
+}

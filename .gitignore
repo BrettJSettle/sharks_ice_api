@@ -1,3 +1,5 @@
 myenv
+hockey_league.db
+.venv
 __pycache__
 __cache__
