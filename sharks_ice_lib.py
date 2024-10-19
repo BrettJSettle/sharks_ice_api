@@ -1,14 +1,19 @@
 """Scraper for SIAHL."""
 
-import io
-import re
 from typing import Any
+import time
+import io
+import datetime
+import pandas as pd
+from bs4 import BeautifulSoup
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 import database
-import numpy as np
-import pandas as pd
 import util
-
 
 TIMETOSCORE_URL = 'https://stats.sharksice.timetoscore.com/'
 TEAM_URL = TIMETOSCORE_URL + 'display-schedule'
@@ -16,131 +21,6 @@ GAME_URL = TIMETOSCORE_URL + 'oss-scoresheet'
 DIVISION_URL = TIMETOSCORE_URL + 'display-league-stats'
 MAIN_STATS_URL = TIMETOSCORE_URL + 'display-stats.php'
 CALENDAR = 'webcal://stats.sharksice.timetoscore.com/team-cal.php?team={team}&tlev=0&tseq=0&season={season}&format=iCal'
-
-td_selectors = dict(
-    # Game stats
-    date=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(1) > td:nth-child(1)'
-    ),
-    time=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(1) > td:nth-child(2)'
-    ),
-    league=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(2) > td:nth-child(1)'
-    ),
-    level=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(3) > td:nth-child(1)'
-    ),
-    location=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(4) > td:nth-child(1)'
-    ),
-    scorekeeper=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(1) > td:nth-child(2)'
-    ),
-    periodLength=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(4) > td:nth-child(2)'
-    ),
-    referee1=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(2) > td:nth-child(2)'
-    ),
-    referee2=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(3) > td:nth-child(2)'
-    ),
-    away=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(2) > td:nth-child(2)'
-    ),
-    home=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(3) > td:nth-child(2)'
-    ),
-    # Selectors we'll use to verify that parsing other parts were correct.
-    awayGoals=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(2) > td:nth-child(7)'
-    ),
-    homeGoals=(
-        'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(3) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(3) > td:nth-child(7)'
-    ),
-)
-
-tr_selectors = dict(
-    awayPlayers=(
-        'body > table:nth-child(3) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(1) > table:nth-child(2) > tbody:nth-child(1) >'
-        ' tr:nth-child(2) > td:nth-child(1) > table:nth-child(1) >'
-        ' tbody:nth-child(1) > tr:nth-child(n+2)'
-    ),
-    homePlayers=(
-        'body > table:nth-child(3) > tbody:nth-child(1) > tr:nth-child(1) >'
-        ' td:nth-child(2) > table:nth-child(1) > tbody:nth-child(1) >'
-        ' tr:nth-child(2) > td:nth-child(1) > table:nth-child(1) >'
-        ' tbody:nth-child(1) > tr:nth-child(n+2)'
-    ),
-    awayScoring=(
-        'body > div > div.d50l > div.d25l > table:nth-child(1) >'
-        ' tbody:nth-child(1) > tr:nth-child(n+4)'
-    ),
-    homeScoring=(
-        'body > div > div.d50r > div.d25l > table:nth-child(1) >'
-        ' tbody:nth-child(1) > tr:nth-child(n+4)'
-    ),
-    awayPenalties=(
-        'body > div > div.d50l > div.d25r > table:nth-child(1) >'
-        ' tbody:nth-child(1) > tr'
-    ),
-    homePenalties=(
-        'body > div > div.d50r > div.d25r > table:nth-child(1) >'
-        ' tbody:nth-child(1) > tr'
-    ),
-    awayShootout=(
-        'body > div > div.d50l > div.d25l > table:nth-child(2) >'
-        ' tbody:nth-child(1) > tr:nth-child(n+4)'
-    ),
-    homeShootout=(
-        'body > div > div.d50r > div.d25l > table:nth-child(2) >'
-        ' tbody:nth-child(1) > tr:nth-child(n+4)'
-    ),
-)
-
-columns = dict(
-    players=['number', 'position', 'name'],
-    penalties=[
-        'period',
-        'number',
-        'infraction',
-        'minutes',
-        'offIce',
-        'start',
-        'end',
-        'onIce',
-    ],
-    scoring=['period', 'time', 'extra', 'goal', 'assist1', 'assist2'],
-    shootout=['number', 'player', 'result'],
-)
 
 team_columns_rename = {
     'GP': 'gamesPlayed',
@@ -152,48 +32,6 @@ team_columns_rename = {
     'Streak': 'streak',
     'Tie Breaker': 'tieBreaker',
 }
-
-player_columns_rename = {
-    'Team': 'team',
-    'Name': 'name',
-    '#': 'number',
-    'GP': 'gamesPlayed',
-    'Ass.': 'assists',
-    'Goals': 'goals',
-    'Pts': 'points',
-    'Pts/Game': 'pointsPerGame',
-    'Hat': 'hatTricks',
-    'Min': 'penaltyMinutes',
-}
-
-goalie_columns_rename = {
-    'Team': 'team',
-    'Name': 'name',
-    'GP': 'gamesPlayed',
-    'Shots': 'shots',
-    'GA': 'goalsAgainst',
-    'GAA': 'goalsAgainstAverage',
-    'Save %': 'savePercentage',
-    'SO': 'shutouts',
-}
-
-game_columns_rename = {
-    'Game': ('id', lambda g: str(g).replace('*', '').replace('^', '')),
-    'Date': 'date',
-    'Time': 'time',
-    'Rink': 'rink',
-    'League': 'league',
-    'Level': 'level',
-    'Away': 'away',
-    'Home': 'home',
-    'Type': 'type',
-    'Goals.1': 'homeGoals',
-    'Goals': 'awayGoals',
-    'Scoresheet': None,
-    'Box Score': None,
-    'Game Center': None,
-}
-
 
 class Error(Exception):
   pass
@@ -215,58 +53,6 @@ def rename(initial: dict[str, str], mapping: dict[str, str]):
       val = func(val)
     new_map[mapped_key] = val
   return new_map
-
-
-def parse_td_row(row):
-  val = []
-  for td in row('td'):
-    if td('a'):
-      val.append({'text': td.a.text.strip(), 'link': td.a['href']})
-    else:
-      val.append(td.text.strip())
-  return val
-
-
-def fix_players_rows(rows):
-  val = []
-  for row in rows:
-    val.append(row[:3])
-    if len(row) == 6:
-      val.append(row[3:])
-  return val
-
-
-@util.cache_json('seasons')
-def scrape_seasons():
-  """Scrape season data from HTML."""
-  soup = util.get_html(MAIN_STATS_URL, params={'league': '1'})
-  season_ids = {
-      o.text.strip(): int(o['value'])
-      for o in soup.find('select')('option')
-      if int(o['value']) > 0
-  }
-  current = 0
-  for link in soup.find_all('a', href=True):
-    current = re.search(r'season=(\d+)', link['href'])
-    if current:
-      current = int(current.group(1))
-      break
-  if current > 0:
-    season_ids['Current'] = current
-  return season_ids
-
-
-def get_team_id(db: database.Database, team_name: str, season: int) -> str:
-  """Get team id from string."""
-  if not team_name:
-    return None
-  teams = db.list_teams('season_id = %s AND name = "%s"' % (season, team_name))
-  # This shouldn't happen
-  if len(teams) > 1:
-    raise KeyError('Duplicate team names: %s' % teams)
-  if not teams:
-    raise ValueError('No team named %s in season %s' % (team_name, season))
-  return teams[0]['team_id']
 
 
 NO_LINK_INT = lambda a: int(a[0]) if a[0] else 0
@@ -307,242 +93,282 @@ def scrape_season_divisions(season_id: int):
   """Scrape divisions and teams in a season."""
   soup = util.get_html(MAIN_STATS_URL, params=dict(league=1, season=season_id))
   divisions = []
-  division_name = ''
+  level = ''
   division_id = 0
   conference_id = 0
   table_rows = []
   for row in soup.table.find_all('tr'):
-    # Ignore non-header rows
-    if row('th'):
-      header = row.th.text.strip()
-      if header.startswith('Adult Division') or header.startswith('Senior'):
-        division_name = header
-        href = row.next_sibling.a['href'].strip()
-        division_id = int(util.get_value_from_link(href, 'level'))
-        conference_id = int(util.get_value_from_link(href, 'conf'))
-        continue
-      if len(table_rows) > 1:
-        teams = _parse_division_teams(
-            '<table>' + '\n'.join(table_rows) + '</table>'
-        )
-        divisions.append({
-            'name': division_name,
-            'id': division_id,
-            'conferenceId': conference_id,
-            'seasonId': season_id,
-            'teams': teams,
-        })
-      table_rows = [str(row)]
-    else:
+    # Non-header rows are teams
+    if not row('th'):
       table_rows.append(str(row))
+      continue
+
+    # Parse level of past N rows.
+    if len(table_rows) > 1:
+      divisions.append({
+          'name': level,
+          'id': division_id,
+          'conference_id': conference_id,
+          'season_id': season_id,
+          'teams': _parse_division_teams('<table>' + '\n'.join(table_rows) + '</table>')
+      })
+    # Start parsing a new header.
+    header = row.th.text.strip()
+    if header.startswith('Adult Division') or header.startswith('Senior'):
+      level = header
+      div_stats_link = row.next_sibling.a['href'].strip()
+      division_id = int(util.get_value_from_link(div_stats_link, 'level'))
+      conference_id = int(util.get_value_from_link(div_stats_link, 'conf'))
+    table_rows = [str(row)]
 
   # Add the last division too.
   if len(table_rows) > 1:
-    teams = _parse_division_teams(
-        '<table>' + '\n'.join(table_rows) + '</table>'
-    )
     divisions.append({
-        'name': division_name,
+        'name': level,
         'id': division_id,
-        'conferenceId': conference_id,
-        'seasonId': season_id,
-        'teams': teams,
+        'conference_id': conference_id,
+        'season_id': season_id,
+        'teams': _parse_division_teams('<table>' + '\n'.join(table_rows) + '</table>'),
     })
   return divisions
 
+class DumbDateTime:
+  MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  def __init__(self, month, day, hour, minute):
+    self._month = month
+    self._day = day
+    self._hour = hour
+    self._minute = minute
 
-@util.cache_json('seasons/{season_id}/teams/{team_id}')
-def get_team(season_id: int, team_id: int, reload=False):
-  """Get team info from a season and id."""
-  info = {}
-  soup = util.get_html(TEAM_URL, params=dict(season=season_id, team=team_id))
-  if not soup.table:
-    return {}
+  @staticmethod
+  def from_string(s: str):
+    md, hm = s.split()
+    m, d = md.split('/')
+    h, mi = hm.split(':')
+    return DumbDateTime(m, d, h, mi)
 
-  games = []
-  results = pd.read_html(io.StringIO(str(soup.table)), header=1)[0]
-  results = results.fillna(np.nan).replace([np.nan], [None])
-  for _, row in results.iterrows():
-    row = rename(row.to_dict(), game_columns_rename)
-    if row['type'] == 'Practice':
-      continue
-    date = row.pop('date', None)
-    time = row.pop('time', None)
-    year = None  # Estimate year
-    if not date or not time:
-      row['start_time'] = None
-    else:
-      row['start_time'] = util.parse_game_time(date, time, year)
-    # Goals can be str, int, or float for some reason.
-    # Correct all to string to allow for shootouts (e.g. "4 S")
-    if isinstance(row['homeGoals'], float):
-      row['homeGoals'] = str(int(row['homeGoals']))
-    elif row['homeGoals'] is None:
-      del row['homeGoals']
-    if isinstance(row['awayGoals'], float):
-      row['awayGoals'] = str(int(row['awayGoals']))
-    elif row['awayGoals'] is None:
-      del row['awayGoals']
-    games.append(row)
-  info['games'] = games
-  return info
+  @staticmethod
+  def from_date_time(date: str, timeofday: str):
+    timeofday = timeofday.replace('12 Noon', '12:00 PM')
+    try:
+      _, month, day = date.split()
+      hour_minute, m = timeofday.split()
+      hour, minute = hour_minute.split(':')
+      hour = int(hour)
+      if m == 'PM' and hour < 12:
+        hour += 12
+    except ValueError as e:
+      raise Exception("Failed to parse %s %s to datetime" % (date, timeofday))
+    return DumbDateTime(
+      month=(DumbDateTime.MONTHS.index(month) + 1),
+      day=int(day), 
+      hour=hour,
+      minute=int(minute))
 
+  def __str__(self):
+    return '%d/%d %d:%02d' % (self._month, self._day, self._hour, self._minute)
+  
+  def as_date(self, year: int):
+    return datetime.datetime(year=year, month=self._month, day=self._day, hour=self._hour, minute=self._minute)
 
-def scrape_game_stats(game_id: int):
-  """Get game stats from an id."""
-  soup = util.get_html(GAME_URL, params=dict(game_id=game_id))
-  if not soup.select_one(td_selectors['periodLength']):
-    raise MissingStatsError('No game stats for %s' % game_id)
-  data = {}
-  for name, selector in td_selectors.items():
-    ele = soup.select_one(selector)
-    if not ele and name == 'scorekeeper':
-      raise MissingStatsError(
-          'Failed to read data for game. Has it happened yet?'
-      )
-    val = ele.text.strip()
-    if ':' in val:
-      val = val.split(':', 1)[1]
-    data[name] = val
+def ordinal(n):
+  """Converts an integer to its ordinal string (e.g., 1st, 2nd, 3rd)."""
 
-  for name, selector in tr_selectors.items():
-    prefix = 'home' if name.startswith('home') else 'away'
-    suffix = name[len(prefix) :].lower()
-    eles = soup.select(selector)
-    rows = [parse_td_row(row) for row in eles if row('td')]
-    # Hack for players tables.
-    if name.endswith('Players'):
-      rows = fix_players_rows(rows)
-    val = [dict(zip(columns[suffix], row)) for row in rows]
-    data[name] = val
-  return data
-
-
-def sync_seasons(db: database.Database):
-  seasons = scrape_seasons()
-  for name, season_id in seasons.items():
-    db.add_season(season_id, name)
-  if 'Current' not in seasons:
-    db.add_season(0, 'Current')
-
-
-def sync_divisions(db: database.Database, season: int):
-  """Sync divisions from site."""
-  divs = scrape_season_divisions(season_id=season)
-  print('Found %d divisions in season %s...' % (len(divs), season))
-  for div in divs:
-    db.add_division(
-        division_id=div['id'],
-        conference_id=div['conferenceId'],
-        name=div['name'],
-    )
-    print('%s teams in %s' % (len(div['teams']), div['name']))
-    for team in div['teams']:
-      team_id = team.pop('id')
-      team_name = team.pop('name')
-      db.add_team(
-          season_id=season,
-          division_id=div['id'],
-          conference_id=div['conferenceId'],
-          team_id=team_id,
-          name=team_name,
-          stats=team,
-      )
-
-
-def get_team_or_unknown(db: database.Database, team_name: str, season: int):
-  """Get team id from string."""
-  try:
-    team_id = get_team_id(db, team_name, season)
-  except ValueError as e:
-    print(e)
-    db.add_season(season_id=-1, name='UNKNOWN')
-    db.add_division(division_id=-1, conference_id=-1, name='UNKNOWN')
-    team_id = -1
-    db.add_team(
-        season_id=-1,
-        division_id=-1,
-        conference_id=-1,
-        team_id=team_id,
-        name='UNKNOWN',
-        stats={},
-    )
-  return team_id
-
-
-def add_game(
-    db: database.Database,
-    season: int,
-    team: dict[str, Any],
-    game: dict[str, Any],
-):
-  """Add a game to the database."""
-  # Clean up dict and translate data.
-  game_id = game.pop('id')
-  start_time = game.pop('start_time', None)
-  rink = game.pop('rink', None)
-  # Get Team IDs from names and season.
-  home, away = game['home'], game['away']
-  if home == team['name']:
-    home_id = team['team_id']
-    away_id = get_team_or_unknown(db, away, season)
+  if 11 <= (n % 100) <= 13:
+    return f"{n}th"
   else:
-    home_id = get_team_or_unknown(db, home, season)
-    away_id = team['team_id']
-  db.add_game(
-      season_id=season,
-      division_id=team['division_id'],
-      conference_id=team['conference_id'],
-      game_id=game_id,
-      home_id=home_id,
-      away_id=away_id,
-      rink=rink,
-      start_time=start_time,
-      info=game,
-  )
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
 
+def get_game_dt(game_id: int):
+  soup = util.get_html(GAME_URL, params=dict(game_id=game_id))
+  start_path =(
+    'body > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(1) >'
+    ' td:nth-child(1) > table:nth-child(1) > tbody:nth-child(1) >'
+    ' tr:nth-child(1) > td:nth-child(1)')
+  start_ele = soup.select_one(start_path)
+  val = start_ele.text.strip().replace('Date:', '')
+  dt = datetime.datetime.strptime(val, '%m-%d-%y')
+  return dt
 
-def sync_season_teams(db: database.Database, season: int):
-  """Sync games from site."""
-  teams = db.list_teams('season_id = %d' % season)
-  game_ids = set()
-  for team in teams:
-    print('Syncing %s season %d...' % (team['name'], season))
-    team_info = get_team(season_id=season, team_id=team['team_id'])
-    games = team_info.pop('games', [])
-    for game in games:
-      if game['id'] in game_ids:
+def guess_year(start_time: DumbDateTime, first_game_dt: datetime.datetime) -> datetime.datetime:
+  try:
+    same_year = start_time.as_date(first_game_dt.year)
+  except:
+    # Usually means leap year
+    return start_time.as_date(first_game_dt.year + 1)
+  if (same_year < first_game_dt):
+    return start_time.as_date(first_game_dt.year + 1)
+  return same_year
+
+# Class for syncing data from scrapers and adding to DB
+class Syncer:
+  def __init__(self, db: database.Database):
+    self._db = db
+    self._min_season = 0
+
+  def get_season_games(self, driver, season_id: int):
+    url = 'https://stats.sharksice.timetoscore.com/display-schedule.php?stat_class=1&league=1&season=%s' % season_id
+    driver.get(url)
+    # Wait for the page to load (adjust the timeout as needed)
+    wait = WebDriverWait(driver, 5)
+    try:
+      wait.until(EC.presence_of_element_located((By.TAG_NAME, 'tbody')))
+    except:
+      return []
+
+    # Get the HTML content of the table
+    html_content = driver.page_source
+    soup = BeautifulSoup(html_content, 'html.parser')
+    table = soup.find('table')
+
+    # Extract data from the table (adjust the selectors as needed)
+    column_rename = {
+      'Game': 'game_id',
+      'Date': 'date',
+      'Time': 'time',
+      'Rink': 'rink',
+      'League': 'league',
+      'Level': 'level',
+      'Away': 'away',
+      # 'away_goals', 
+      'Home': 'home', 
+      # 'home_goals', 
+      'Type': 'type', 
+    }
+    rows = table.find_all('tr')
+    # Parse headers
+    columns = []
+    for h in rows[1].find_all('th'):
+      text = h.text.strip()
+      if text == 'Goals':
+        text = 'away_goals' if 'away_goals' not in columns else 'home_goals'
+      text = column_rename.get(text, text)
+      columns.append(text)
+    
+    first_game_dt = None
+    for row in rows[2:]:
+      cells = row.find_all('td')
+      row_data = [cell.text.strip() for cell in cells]
+      row_data = [a.replace('  ', ' ') for a in row_data]
+      if len(cells) != len(columns):
+        print('Row has %s, Columns is %s' % (len(cells), len(columns)))
         continue
-      game_ids.add(game['id'])
-      add_game(db, season, team, game)
+      game = dict(zip(columns, row_data))
+      if game['type'] == 'Practice':
+        continue
+      if not game['away'] and not game['home']:
+        continue
+      game['rink'] = game['rink'].replace('San Jose ', '')
+      game['level'] = game['level'].replace('Adult Division', 'Div')
+      # Use first game time to estimate year for all games.
+      if first_game_dt is None:
+        first_game_dt = get_game_dt(game['game_id'])
+      start_time = DumbDateTime.from_date_time(game.pop('date'), game.pop('time'))
+      game['start_dt'] = guess_year(start_time, first_game_dt)
+      yield game
 
+  def sync_season_teams(self, season_id: int):
+    """Sync divisions from site."""
+    print('Scraping divisions from season %s' % season_id)
+    divs = scrape_season_divisions(season_id=season_id)
+    if len(divs) == 0:
+      raise Exception("No divs found for season %s" % season_id)
+    for div in divs:
+      self._db.add_division(
+          division_id=div['id'],
+          conference_id=div['conference_id'],
+          name=div['name'],
+      )
+      for i, team in enumerate(div['teams']):
+        team_id = team.pop('id')
+        team_name = team.pop('name')
+        self._db.add_team(
+            team_id=team_id,
+            name=team_name,
+        )
+        team['place'] = ordinal(i + 1)
+        self._db.set_team_stats(
+            season_id=season_id,
+            division_id=div['id'],
+            conference_id=div['conference_id'],
+            team_id=team_id,
+            stats=team,
+        )
 
-def sync_game_stats(db: database.Database):
-  games = db.list_games()
-  for game in games:
-    if not game['stats']:
+  def sync_season_games(self, season_id: int):
+    print('Scraping games from season %s' % season_id)
+    num_games = 0
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')
+    driver = webdriver.Chrome(options=options)
+    try:
+      for game in self.get_season_games(driver, season_id):
+        # Goals can be str, int, or float for some reason.
+        # Correct all to string to allow for shootouts (e.g. "4 S")
+        if isinstance(game['home_goals'], float):
+          game['home_goals'] = str(int(game['home_goals']))
+        elif game['home_goals'] is None:
+          del game['home_goals']
+        if isinstance(game['away_goals'], float):
+          game['away_goals'] = str(int(game['away_goals']))
+        elif game['away_goals'] is None:
+          del game['away_goals']
+        
+        game['game_id'] = game['game_id'].replace('*', '').replace('^', '')
+
+        try:
+          game['home_id'] = self._db.get_team_id(game['home'], season_id=season_id)
+        except Exception as e:
+          print("Failed to get teams for game %s: %s" % (game['game_id'], e))
+          game['home_id'] = -1
+
+        try:
+          game['away_id'] = self._db.get_team_id(game['away'], season_id=season_id)
+        except Exception as e:
+          print("Failed to get teams for game %s: %s" % (game['game_id'], e))
+          game['away_id'] = -1
+        self._db.add_game(
+          season_id=season_id,
+          **game)
+        num_games += 1
+    finally:
+      driver.close()
+    return num_games
+
+  def set_min_season(self, min_season):
+    self._min_season = min_season
+    
+  def sync(self, lookback=datetime.timedelta(days=1)):
+    season_id = self._min_season
+    season_errors = 0
+    while True:
+      if season_errors >= 4:
+        break
       try:
-        stats = scrape_game_stats(game['game_id'])
-      except Exception as e:
-        print(e)
+        self.sync_season_teams(season_id=season_id)
+      except Exception:
+        season_errors += 1
+        season_id += 1
         continue
-      db.add_game_stats(game['game_id'], stats)
+      games = self.sync_season_games(season_id=season_id, lookback=lookback)
+      print('Scraped %d games in season %d' % (games, season_id))
+      # TODO: Move min_season if current season is invalid or too far back.
+      season_errors = 0
+      season_id += 1
 
 
-def load_data(db: database.Database):
-  db.create_tables()
-  sync_seasons(db)
-  # print(db.list_seasons())
-  seasons = [a['season_id'] for a in db.list_seasons()]
-  for season in sorted(seasons, reverse=True):
-    if season >= 32:
-      continue
-    sync_divisions(db, season)
-    sync_season_teams(db, season)
+def scrape():
+  DATABASE.create_tables()
+  syncer = Syncer(DATABASE)
+  syncer.set_min_season(60)
+  while True:
+    syncer.sync()
+    time.sleep(10)
 
 
 DATABASE = database.Database()
 
 if __name__ == '__main__':
-  load_data(DATABASE)
-  # d = scrape_season_divisions(66)
+  # scrape()
+  pass

@@ -17,6 +17,7 @@ pandas
 python-dateutil
 pytz
 requests
+selenium
 six
 soupsieve
 urllib3
